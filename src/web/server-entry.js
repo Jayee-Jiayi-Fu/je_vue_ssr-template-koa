@@ -1,42 +1,58 @@
 import { createApp } from "./app";
+const isDev = process.env.NODE_ENV !== "production";
 
 export default (context) => {
   // since there could potentially be asynchronous route hooks or
   // components, we will be returning a Promise so that the server can
   // wait until everything is ready before rendering.
   return new Promise((resolve, reject) => {
+    const s = isDev && Date.now();
+
     const { app, router, store } = createApp(context);
+
     // metadata is provided by vue-meta plugin
-    const meta = app.$meta();
+    // const meta = app.$meta();
+    // context.meta = meta;
 
-    // set server-side router's location
-    router.push(context.url);
+    const { url } = context;
+    const { fullPath } = router.resolve(url).route;
+    if (fullPath !== url) {
+      return reject({ url: fullPath });
+    }
 
-    context.meta = meta;
+    // 设置服务器端 router 的位置
+    router.push(url);
 
-    // wait until router has resolved possible async components and
-    // hooks
+    // wait until router has resolved possible async components and hooks
     router.onReady(() => {
       const matchedComponents = router.getMatchedComponents();
       // no matched routes, reject with 404
       if (!matchedComponents.length) {
         return reject({ code: 404 });
       }
-      // This `rendered` hook is called when the app has finished
-      // rendering
-      context.rendered = () => {
-        // After the app is rendered, our store is now
-        // filled with the state from our components.
-        // When we attach the state to the context, and the
-        // `template` option is used for the renderer, the state
-        // will automatically be serialized and injected into the
-        // HTML as `window.__INITIAL_STATE__`.
-        context.state = store.state;
-      };
 
-      // the Promise should resolve to the app instance so it can
-      // be rendered
-      resolve(app);
+      // 对所有匹配的路由组件调用 `asyncData()`
+      Promise.all(
+        matchedComponents.map(
+          ({ asyncData }) =>
+            asyncData &&
+            asyncData({
+              store,
+              route: router.currentRoute,
+            })
+        )
+      )
+        .then(() => {
+          isDev && console.log(`data pre-fetch: ${Date.now() - s}ms`);
+
+          // 状态添加到 render 的 context中，
+          // 1. 暴露state
+          // 2.请求时，template 能通过context 拿到state数据
+          // 3.防止 client-side store 和 server-side store 重复获取初始数据
+          context.state = store.state;
+          resolve(app);
+        })
+        .catch(reject);
     }, reject);
   });
 };

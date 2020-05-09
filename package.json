@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "cross-env NODE_ENV=development nodemon ./server.js",
     "start": "cross-env NODE_ENV=production nodemon ./server.js",
-    "build": "rimraf dist && npm run build:client && npm run build:server",
+    "build": "npm-run-all clean build:*",
+    "clean": "rimraf dist",
     "build:client": "cross-env NODE_ENV=production webpack --config ./config/webpack.client.config.js",
     "build:server": "cross-env NODE_ENV=production webpack --config ./config/webpack.server.config.js"
   },
@@ -18,16 +19,20 @@
     "@babel/preset-env": "^7.9.6",
     "autoprefixer": "^9.7.6",
     "babel-loader": "^8.1.0",
+    "chokidar": "^3.4.0",
     "cross-env": "^7.0.2",
     "css-loader": "^3.5.3",
     "file-loader": "^6.0.0",
-    "html-webpack-plugin": "^4.3.0",
-    "koa-webpack": "^5.3.0",
+    "koa-webpack-middleware": "^1.0.7",
     "mini-css-extract-plugin": "^0.9.0",
     "node-sass": "^4.14.1",
     "nodemon": "^2.0.3",
+    "npm-run-all": "^4.1.5",
+    "optimize-css-assets-webpack-plugin": "^5.0.3",
     "postcss-loader": "^3.0.0",
     "sass-loader": "^8.0.2",
+    "sw-precache-webpack-plugin": "^1.0.0",
+    "terser-webpack-plugin": "^3.0.1",
     "url-loader": "^4.1.0",
     "vue-loader": "^15.9.2",
     "vue-server-renderer": "^2.6.11",
@@ -40,15 +45,19 @@
   },
   "dependencies": {
     "axios": "^0.19.2",
+    "firebase": "^7.14.3",
     "koa": "^2.11.0",
+    "koa-compress": "^4.0.1",
     "koa-mount": "^4.0.0",
     "koa-router": "^8.0.8",
     "koa-static": "^5.0.0",
+    "memory-fs": "^0.5.0",
     "vue": "^2.6.11",
     "vue-meta": "^2.3.3",
     "vue-router": "^3.1.6",
     "vue-template-compiler": "^2.6.11",
-    "vuex": "^3.3.0"
+    "vuex": "^3.3.0",
+    "vuex-router-sync": "^5.0.0"
   },
   "nodemonConfig": {
     "watch": [

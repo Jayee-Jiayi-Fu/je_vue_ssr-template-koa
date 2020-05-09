@@ -1,4 +1,4 @@
-// config/webpack.server.config.js
+const webpack = require("webpack");
 const nodeExternals = require("webpack-node-externals");
 const VueSSRServerPlugin = require("vue-server-renderer/server-plugin");
 const path = require("path");
@@ -8,12 +8,20 @@ const base = require("./webpack.base.config");
 const srcPath = path.resolve(process.cwd(), "src/web");
 
 module.exports = merge(base, {
-  entry: path.join(srcPath, "server-entry.js"),
+  entry: {
+    server: path.join(srcPath, "server-entry.js"),
+  },
   target: "node",
   devtool: "source-map",
   // This tells the server bundle to use Node-style exports
   output: {
+    filename: "server-bundle.js",
     libraryTarget: "commonjs2",
+  },
+  resolve: {
+    alias: {
+      "create-api": "./create-api-server.js",
+    },
   },
 
   // 防止将某些 import的包打包到bundle中，
@@ -27,5 +35,13 @@ module.exports = merge(base, {
   // This is a plugin that turns the entire output of the server build
   // into a single JSON file. The default file name will be
   // `vue-ssr-server-bundle.json`
-  plugins: [new VueSSRServerPlugin()],
+  plugins: [
+    new webpack.DefinePlugin({
+      "process.env.NODE_ENV": JSON.stringify(
+        process.env.NODE_ENV || "development"
+      ),
+      "process.env.VUE_ENV": '"server"',
+    }),
+    new VueSSRServerPlugin(),
+  ],
 });

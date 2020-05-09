@@ -5,88 +5,102 @@ const serve = require("koa-static");
 const mount = require("koa-mount");
 const path = require("path");
 const fs = require("fs");
-const vueServerRenderer = require("vue-server-renderer");
-const setupDevServer = require("./config/setup-dev-server");
+const LRU = require("lru-cache");
+const compress = require("koa-compress");
+const { createBundleRenderer } = require("vue-server-renderer");
 
+const isProd = process.env.NODE_ENV === "production";
 const port = 3000;
 const app = new Koa();
 const router = new Router();
+const templatePath = path.resolve(__dirname, "./index.html");
+const serverInfor = `koa/${
+  require("koa/package.json").version
+} vue-server-renderer/${require("vue-server-renderer/package.json").version}`;
 
-const createRenderer = (bundle) =>
-  vueServerRenderer.createBundleRenderer(bundle, {
-    runInNewContext: false,
-    template: fs.readFileSync(
-      path.resolve(__dirname, "dist/index.html"),
-      "utf-8"
-    ),
-  });
 let renderer;
+let readypromise;
 
-if (process.env.NODE_ENV === "development") {
-  setupDevServer(app, (serverBundle) => {
-    renderer = createRenderer(serverBundle);
-  });
-} else {
-  renderer = createRenderer(require("./dist/vue-ssr-server-bundle.json"));
+function createRenderer(bundle, options) {
+  return createBundleRenderer(
+    bundle,
+    Object.assign(options, {
+      cache: new LRU({
+        max: 1000,
+        maxAge: 1000 * 60 * 15,
+      }),
+      basedir: path.resolve(__dirname, "./dist"),
+      runInNewContext: false,
+    })
+  );
 }
 
-// you may want to serve static files with nginx or CDN
-router.get("/", async (ctx, next) => {
-  const context = {
-    url: "/blog",
-    state: {
-      title: "Vue SSR Simple Steps",
-      users: [],
-    },
-  };
-  ctx.body = await renderer.renderToString(context);
-});
-router.get("/about", async (ctx, next) => {
-  const context = {
-    url: "/blog/about",
-    state: {
-      title: "Vue SSR Simple Steps",
-      users: [],
-    },
-  };
-  ctx.body = await renderer.renderToString(context);
-});
+// 根据环境确定 renderer
+// 生产环境中可直接用于生产返回
+// 开发环境是一个promise
+if (isProd) {
+  const serverBundle = require("./dist/vue-ssr-server-bundle.json");
+  const clientManifest = require("./dist/vue-ssr-client-manifest.json");
+  const template = fs.readFileSync(templatePath, "utf-8"),
+    renderer = createRenderer(serverBundle, { clientManifest, template });
+} else {
+  // 开发环境中：开启dev server 来热重载
+  readyPromise = require("./config/setup-dev-server")(
+    app,
+    templatePath,
+    (serverBundle, options) => {
+      renderer = createRenderer(serverBundle, options);
+    }
+  );
+}
 
-router.get("/users", async (ctx, next) => {
-  ctx.type = "json";
-  ctx.body = JSON.stringify([
-    {
-      name: "Albert",
-      lastname: "Einstein",
-    },
-    {
-      name: "Isaac",
-      lastname: "Newton",
-    },
-    {
-      name: "Marie",
-      lastname: "Curie",
-    },
-  ]);
-});
+// 调用renderer，组装响应
+async function render(ctx, next) {
+  ctx.type = "html";
+  ctx.append("Server", serverInfor);
 
-const assets = new Koa();
-assets.use(serve(__dirname + "/dist/"));
+  let context = ctx.content || {};
+  context = Object.assign({ url: ctx.originalUrl }, context);
 
-const blogApp = new Koa();
-blogApp.use(router.routes()).use(router.allowedMethods());
+  const result = await renderer.renderToString(context);
+  console.log("result..........", result);
+  ctx.response.body = result;
+}
 
-app.use(mount("/public", assets));
-app.use(mount("/blog", blogApp));
+app.use(
+  compress({
+    threshold: 0,
+  })
+);
+app.use(compress({ threshold: 0 }));
+app.use(serve("./public"));
+app.use(serve("./dist"));
 
-app.on("error", (error, ctx) => {
-  // console.error("server error", error);
-  if (error.code === 404) {
+router.get(
+  "*",
+  isProd ? render : (ctx, next) => readyPromise.then(() => render(ctx, next))
+);
+app.use(router.routes());
+// const blogApp = new Koa();
+// blogApp.use(router.routes());
+// app.use(mount("/blog", blogApp));
+
+// const assetsApp = new Koa();
+// assetsApp.use(serve(path.resolve(__dirname, "./dist")));
+// app.use(mount("/public", assetsApp));
+
+app.on("error", (err, ctx) => {
+  if (err.url) {
+    ctx.redirect(err.url);
+  } else if (err.code === 404) {
     ctx.status = 404;
     ctx.body = "404 | Page Not Found";
   } else {
+    // Render Error Page or Redirect
     ctx.status = 500;
     ctx.body = "500 | Internal Server Error";
+    console.error(`error during render : ${ctx.url}`);
+    console.error(err.stack);
   }
 });
 

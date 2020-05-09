@@ -1,14 +1,20 @@
 const path = require("path");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
+const OptimizeCssAssetsPlugin = require("optimize-css-assets-webpack-plugin");
+const TerserJSPlugin = require("terser-webpack-plugin");
 const autoprefixer = require("autoprefixer");
-const HtmlWebpackPlugin = require("html-webpack-plugin");
 const VueLoaderPlugin = require("vue-loader/lib/plugin");
 const srcPath = path.resolve(process.cwd(), "src/web");
-const isProduction = process.env.NODE_ENV === "production";
+const isProd = process.env.NODE_ENV === "production";
 
 module.exports = {
   mode: process.env.NODE_ENV,
-  devtool: isProduction ? "source-map" : "eval-source-map",
+  output: {
+    path: path.resolve(__dirname, "../dist"),
+    publicPath: "/dist/",
+    filename: "[name].[hash:6].js",
+  },
+  devtool: isProd ? false : "cheap-module-source-map",
   module: {
     rules: [
       {
@@ -24,15 +30,7 @@ module.exports = {
       },
       {
         test: /\.css$/,
-        use: [
-          MiniCssExtractPlugin.loader,
-          {
-            loader: "css-loader",
-            options: {
-              sourceMap: !isProduction,
-            },
-          },
-        ],
+        use: [MiniCssExtractPlugin.loader, "css-loader"],
       },
       {
         test: /\.scss$/,
@@ -56,7 +54,7 @@ module.exports = {
             loader: "url-loader",
             options: {
               limit: 10000,
-              name: "/[path][name].[hash:7].[ext]",
+              name: "/[path][name].[hash:6].[ext]",
               context: srcPath,
             },
           },
@@ -69,7 +67,7 @@ module.exports = {
             loader: "url-loader",
             options: {
               limit: 10000,
-              name: "[name].[hash:7].[ext]",
+              name: "[name].[hash:6].[ext]",
             },
           },
         ],
@@ -78,27 +76,49 @@ module.exports = {
   },
   plugins: [
     new VueLoaderPlugin(),
-    ...(isProduction
-      ? [
-          new MiniCssExtractPlugin({
-            filename: "[name].[contenthash:6].css",
-          }),
-          new HtmlWebpackPlugin({
-            template: path.resolve(process.cwd(), "index.html"),
-            minify: false,
-          }),
-        ]
-      : [
-          new MiniCssExtractPlugin({
-            filename: "[name].css",
-            hmr: true,
-          }),
-        ]),
+    new MiniCssExtractPlugin({
+      filename: "[name].[contenthash:6].css",
+      chunkFilename: "[id].[contenthash:6].css",
+      hmr: !isProd,
+    }),
   ],
   optimization: {
-    minimize: true,
+    noEmitOnErrors: true,
+    minimizer: [
+      new TerserJSPlugin({
+        cache: true,
+        // paraller: true,
+        sourceMap: true,
+      }),
+      new OptimizeCssAssetsPlugin({
+        cssProcessorOptions: {
+          safe: true,
+          discardComments: { removeAll: true },
+        },
+      }),
+    ],
+    splitChunks: {
+      cacheGroups: {
+        styles: {
+          // 生成的共享模块bundle的名字
+          name: "styles",
+          test: /\.css$/,
+          reuseExistingChunk: true,
+        },
+        vendor: {
+          name: "vendormanifest",
+          // initial”,：优化时只选择初始的chunks
+          // async：优化时只选择所需要的chunks
+          // all：优化时选择所有chunks 。
+          chunks: "initial",
+          // split前，有共享模块的chunks的最小数目 ，默认值是1
+          minChunks: 2,
+          reuseExistingChunk: true,
+        },
+      },
+    },
   },
   performance: {
-    hints: "error",
+    hints: false,
   },
 };
